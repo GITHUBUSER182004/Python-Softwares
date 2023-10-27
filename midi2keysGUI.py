@@ -1,13 +1,16 @@
 import sys
 import pretty_midi
 import pyautogui
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QFileDialog, QLabel, QSlider
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QFileDialog, QLabel, QSlider
+from collections import defaultdict
+
+pyautogui.FAILSAFE = False
 
 class MyApp(QWidget):
 
     def __init__(self):
-        super(MyApp, self).__init__()
+        super().__init__()
 
         self.initUI()
         self.timer = QTimer()
@@ -17,7 +20,6 @@ class MyApp(QWidget):
         self.note_events = []
         self.isPlaying = False
         self.original_interval = 0
-
         self.note_to_key = {
             'C3': '1', 'C#3': '!', 'D3': '2', 'D#3': '@', 'E3': '3', 'F3': '4', 'F#3': '$', 'G3': '5', 'G#3': '%', 'A3': '6', 'A#3': '^', 'B3': '7',
             'C4': '8', 'C#4': '*', 'D4': '9', 'D#4': '(', 'E4': '0', 'F4': 'q', 'F#4': 'Q', 'G4': 'w', 'G#4': 'W', 'A4': 'e', 'A#4': 'E', 'B4': 'r',
@@ -31,50 +33,52 @@ class MyApp(QWidget):
         vbox = QVBoxLayout()
 
         self.loadButton = QPushButton('Load MIDI', self)
+        self.loadButton.setStyleSheet("QPushButton { background-color: #2ecc71; font: bold 16px; padding: 5px; }")
         self.loadButton.clicked.connect(self.read_midi)
         vbox.addWidget(self.loadButton)
 
         self.label = QLabel('No MIDI loaded', self)
+        self.label.setStyleSheet("QLabel { font: bold 14px; }")
         vbox.addWidget(self.label)
 
         self.simulationButton = QPushButton('Start Simulation', self)
+        self.simulationButton.setStyleSheet("QPushButton { background-color: #3498db; font: bold 16px; padding: 5px; }")
         self.simulationButton.clicked.connect(self.toggle_simulation)
         vbox.addWidget(self.simulationButton)
 
         vbox.addWidget(QLabel("Playback Speed:"))
-        self.speedSlider = QSlider(Qt.Horizontal, self)
+
+        self.speedSlider = QSlider(Qt.Orientation.Horizontal, self)
+        self.speedSlider.setStyleSheet("QSlider { background: #ecf0f1; } QSlider::groove:horizontal { background: #bdc3c7; } QSlider::handle:horizontal { background: #e74c3c; width: 20px; }")
         self.speedSlider.setRange(50, 200)  # 50% to 200% speed
         self.speedSlider.setValue(100)
-        self.speedSlider.setTickPosition(QSlider.TicksBelow)
+        self.speedSlider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.speedSlider.setTickInterval(10)
         self.speedSlider.valueChanged.connect(self.update_speed)
         vbox.addWidget(self.speedSlider)
         
         self.speedLabel = QLabel("100%", self)
+        self.speedLabel.setStyleSheet("QLabel { font: bold 14px; }")
         vbox.addWidget(self.speedLabel)
 
         self.setLayout(vbox)
         self.setWindowTitle('MIDI to Keyboard')
+        self.setStyleSheet("QWidget { background-color: #ecf0f1; }")
         self.show()
 
     def update_speed(self, value):
         self.speed_multiplier = value / 100.0
         self.speedLabel.setText(f"{value}%")
         
-        # Adjust timer interval based on the new speed
         if self.timer.isActive():
             elapsed_time = self.original_interval - self.timer.remainingTime()
             adjusted_elapsed_time = elapsed_time / self.speed_multiplier
             remaining_time = self.original_interval - adjusted_elapsed_time
-            
-            # Ensure remaining_time is never negative
             remaining_time = max(remaining_time, 0)
-            
             self.timer.setInterval(int(remaining_time))
 
     def read_midi(self):
-        options = QFileDialog.Options()
-        self.midi_path, _ = QFileDialog.getOpenFileName(self, "Load MIDI file", "", "MIDI Files (*.mid *.midi);;All Files (*)", options=options)
+        self.midi_path, _ = QFileDialog.getOpenFileName(self, "Load MIDI file", "", "MIDI Files (*.mid *.midi);;All Files (*)")
         if self.midi_path:
             self.label.setText(f'Loaded {self.midi_path}')
             midi_data = pretty_midi.PrettyMIDI(self.midi_path)
@@ -82,30 +86,24 @@ class MyApp(QWidget):
             self.current_event_index = 0
 
     def parse_midi(self, midi_data):
-        self.notes = []
+        timed_events = defaultdict(list)
+        
         for instrument in midi_data.instruments:
-            self.notes.extend(instrument.notes)
-
-        self.notes.sort(key=lambda x: x.start)
+            for note in instrument.notes:
+                timed_events[note.start].append(note)
+                
+        sorted_times = sorted(timed_events.keys())
+        
         self.note_events = []
+        for t in sorted_times:
+            self.note_events.append(('chord', timed_events[t]))
 
-        last_time = 0
-        chord = []
-        for note in self.notes:
-            if note.start == last_time:
-                chord.append(note)
-            else:
-                if chord:
-                    self.note_events.append(('chord', chord))
-                chord = [note]
-            last_time = note.start
-        if chord:
-            self.note_events.append(('chord', chord))
+        self.current_event_index = 0
 
     def toggle_simulation(self):
         if not self.isPlaying:
             self.simulationButton.setText('Stop Simulation')
-            self.timer.start(5000)  # 5 seconds delay before starting
+            self.timer.start(5000)
             self.isPlaying = True
         else:
             self.simulationButton.setText('Start Simulation')
@@ -131,4 +129,4 @@ class MyApp(QWidget):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     ex = MyApp()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
